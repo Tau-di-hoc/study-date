@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>💕 Study Date Diary</title>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+<!-- Chart -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Confetti -->
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+<style>
+body {
+    font-family: Arial;
+    background: linear-gradient(135deg, #ffe6f0, #fff);
+    padding: 20px;
+}
+.container {
+    max-width: 500px;
+    margin: auto;
+}
+.card {
+    background: white;
+    padding: 15px;
+    border-radius: 12px;
+    margin-top: 10px;
+}
+input, select, textarea {
+    width: 100%;
+    padding: 8px;
+    margin: 5px 0;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+button {
+    background: #ff4da6;
+    color: white;
+    padding: 10px;
+    border: none;
+    width: 100%;
+    border-radius: 10px;
+    cursor: pointer;
+    margin-top: 5px;
+}
+.entry {
+    background: #fff0f5;
+    padding: 10px;
+    margin-top: 8px;
+    border-radius: 10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h2>💕 Our Study Diary</h2>
+
+<!-- LOGIN -->
+<div class="card" id="loginBox">
+<input id="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+<button onclick="register()">Register</button>
+<p id="error" style="color:red;"></p>
+</div>
+
+<!-- APP -->
+<div id="app" style="display:none">
+
+<div class="card">
+<input id="task" placeholder="📚 Học gì hôm nay">
+<input id="hours" type="number" placeholder="⏱ Số giờ">
+
+<select id="mood">
+<option>😊 Vui</option>
+<option>😐 Bình thường</option>
+<option>😢 Không vui</option>
+</select>
+
+<input id="rating" type="number" min="1" max="10" placeholder="⭐ Điểm (1-10)">
+<textarea id="comment" placeholder="💬 Nhận xét"></textarea>
+
+<button onclick="addData()">Add 💕</button>
+<button onclick="logout()">Logout</button>
+</div>
+
+<div class="card">
+<h3>📊 Biểu đồ giờ học</h3>
+<canvas id="chart"></canvas>
+</div>
+
+<div class="card">
+<h3>💖 History chung</h3>
+<div id="list"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+// 🔥 DÁN CONFIG CỦA BẠN VÀO ĐÂY
+const firebaseConfig = {
+  apiKey: "AIzaSyCupeRpAMOXVtQ7Czxg0wnf-mwI6hZ6T2c",
+  authDomain: "study-date-with-my-girl.firebaseapp.com",
+  databaseURL: "https://study-date-with-my-girl-default-rtdb.firebaseio.com",
+  projectId: "study-date-with-my-girl"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.database();
+
+let chart;
+
+// LOGIN
+function login(){
+    auth.signInWithEmailAndPassword(email.value, password.value)
+    .catch(err => error.innerText = err.message);
+}
+
+// REGISTER
+function register(){
+    auth.createUserWithEmailAndPassword(email.value, password.value)
+    .catch(err => error.innerText = err.message);
+}
+
+// LOGOUT
+function logout(){
+    auth.signOut();
+}
+
+// AUTH STATE
+auth.onAuthStateChanged(user=>{
+    if(user){
+        loginBox.style.display="none";
+        app.style.display="block";
+        loadData();
+    }else{
+        loginBox.style.display="block";
+        app.style.display="none";
+    }
+});
+
+// ADD DATA (CHUNG)
+function addData(){
+    if(!task.value || !hours.value){
+        alert("Nhập thiếu rồi 💕");
+        return;
+    }
+
+    db.ref("couple-data").push({
+        user: auth.currentUser.email,
+        task: task.value,
+        hours: Number(hours.value),
+        mood: mood.value,
+        rating: rating.value || 0,
+        comment: comment.value,
+        time: new Date().toLocaleDateString()
+    });
+
+    task.value="";
+    hours.value="";
+    rating.value="";
+    comment.value="";
+
+    confetti();
+}
+
+// LOAD DATA
+function loadData(){
+    db.ref("couple-data").on("value", snap=>{
+        let data = snap.val();
+        list.innerHTML="";
+
+        let days={};
+
+        if(!data) return;
+
+        for(let key in data){
+            let d=data[key];
+
+            list.innerHTML+=`
+            <div class="entry">
+            💕 <b>${d.user}</b><br>
+            📅 ${d.time}<br>
+            📚 ${d.task} (${d.hours}h)<br>
+            ${d.mood} ⭐ ${d.rating}/10<br>
+            💬 ${d.comment || "Không có"}
+            </div>
+            `;
+
+            if(!days[d.time]) days[d.time]=0;
+            days[d.time]+=d.hours;
+        }
+
+        drawChart(days);
+    });
+}
+
+// DRAW CHART
+function drawChart(days){
+    let labels = Object.keys(days);
+    let data = Object.values(days);
+
+    if(chart) chart.destroy();
+
+    chart = new Chart(document.getElementById('chart'), {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Giờ học',
+                data: data,
+                backgroundColor: '#ff4da6'
+            }]
+        }
+    });
+}
+</script>
+
+</body>
+</html>
